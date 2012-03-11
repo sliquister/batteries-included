@@ -68,7 +68,7 @@ else
 endif
 endif
 
-.PHONY: all clean doc install uninstall reinstall test qtest qtest-clean camfail camfailunk coverage man
+.PHONY: all clean doc install uninstall reinstall test test-native test-byte qtest _build/$(QTESTDIR)/qtest camfail camfailunk coverage coverage/index.html man
 
 all: _build/$(QTESTDIR)/qtest
 	@echo "Build mode:" $(MODE)
@@ -127,67 +127,41 @@ reinstall:
 ###############################################################################
 #	BUILDING AND RUNNING UNIT TESTS
 ###############################################################################
+# to run the tests in testsuite: ocamlbuild testsuite/main.native --
+# to run the tests in src/batSomething.ml: ocamlbuild src/batSomething_test.native --
+# to run the tests in all the src/bat*.ml: make qtest or ocamlbuild src/all_tests.native --
+# to run all the tests: make test-only-native
 
-### List of source files that it's okay to try to test
-
-DONTTEST=src/batteriesHelp.ml
-TESTABLE ?= $(filter-out $(DONTTEST), $(wildcard src/*.ml))
-TESTDEPS = $(TESTABLE) 
-
-### Test suite: "offline" unit tests
-##############################################
-
-_build/testsuite/main.byte: $(TESTDEPS)
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) testsuite/main.byte
-_build/testsuite/main.native: $(TESTDEPS)
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) testsuite/main.native
 
 ### qtest: "inline" unit tests
 ##############################################
 
-_build/$(QTESTDIR)/qtest.byte:
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) $(QTESTDIR)/qtest.byte
-_build/$(QTESTDIR)/qtest.native:
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) $(QTESTDIR)/qtest.native
-
 # We want a version of qtest without extension to be installed
-_build/$(QTESTDIR)/qtest: _build/$(QTESTDIR)/qtest.$(EXT)
+# why would we want to install the test framework?
+_build/$(QTESTDIR)/qtest:
+	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) $(QTESTDIR)/qtest.$(EXT)
 	cp $< $@
-
-# extract all qtest unit tests into a single ml file
-$(QTESTDIR)/all_tests.ml: _build/$(QTESTDIR)/qtest.$(EXT) $(TESTABLE)
-	@$< -o $@ --preamble 'open Batteries;;' extract $(TESTABLE) || rm -f $@
-
-_build/$(QTESTDIR)/all_tests.byte: $(QTESTDIR)/all_tests.ml $(QTESTDIR)/runner.ml
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) -cflags -warn-error,+26 $(QTESTDIR)/all_tests.byte
-_build/$(QTESTDIR)/all_tests.native: $(QTESTDIR)/all_tests.ml $(QTESTDIR)/runner.ml
-	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) -cflags -warn-error,+26 $(QTESTDIR)/all_tests.native
-
 
 ### qtest: quick run of inline unit tests
 ##############################################
-# $ make qtest TESTABLE=foo.ml
-# will only test the module Foo.
-
-qtest-clean:
-	@${RM} $(QTESTDIR)/all_tests.ml
-	@${MAKE} _build/$(QTESTDIR)/all_tests.$(EXT)
-
-qtest: qtest-clean
-	@_build/$(QTESTDIR)/all_tests.$(EXT)
+qtest:
+	@$(OCAMLBUILD) $(OCAMLBUILDFLAGS) src/all_tests.$(EXT) --
 
 ### run all unit tests
 ##############################################
 
-test-byte: _build/testsuite/main.byte _build/$(QTESTDIR)/all_tests.byte
+test-byte:
+	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) testsuite/main.byte src/all_tests.byte
 	@_build/testsuite/main.byte
-	@echo "" # newline after "OK"
-	@_build/$(QTESTDIR)/all_tests.byte
+	@_build/src/all_tests.byte
 
-test-native: test-byte _build/testsuite/main.native _build/$(QTESTDIR)/all_tests.native
+test-only-native:
+	$(OCAMLBUILD) $(OCAMLBUILDFLAGS) testsuite/main.native src/all_tests.native
 	@_build/testsuite/main.native
-	@echo "" # newline after "OK"
-	@_build/$(QTESTDIR)/all_tests.native
+	@_build/src/all_tests.native
+
+# why would test-native depend on test-byte???
+test-native: test-byte test-only-native
 
 test: $(TEST_TARGET)
 
@@ -225,9 +199,7 @@ setup.ml: _oasis
 #	CODE COVERAGE REPORTS
 ###############################################################################
 
-coverage/index.html: $(TESTDEPS) $(QTESTDIR)/all_tests.ml
+coverage/index.html:
 	$(OCAMLBUILD) coverage/index.html
 
 coverage: coverage/index.html
-
-

@@ -23,11 +23,13 @@ let run_and_read s =
 let bisect_dir = try run_and_read "ocamlfind query bisect" with _ -> "."
 let bisect_pp = Pathname.concat bisect_dir "bisect_pp.cmo"
 
+(* files to be tested are src/batXxxxx.ml *)
 let src_bat_ml =
   let l = Array.to_list (Pathname.readdir "src") in
   let l =
     List.filter (fun filename ->
-      String.is_prefix "bat" filename && String.is_suffix filename ".ml"
+      String.is_prefix "bat" filename && String.is_suffix filename ".ml" &&
+        filename.[3] >= 'A' && filename.[3] <= 'Z'
     ) l in
   List.map (fun filename -> Pathname.concat "src" filename) l
 
@@ -67,21 +69,52 @@ let _ = dispatch begin function
           Cmd(S[A"ocamlrun"; P mkconf; P"META.in"; P"META"])
         end;
 
+      rule "inline test"
+        ~prod:"%_test.ml"
+        ~deps:["%.ml"; "qtest/qtest.native"]
+        begin fun env build ->
+          Cmd(S[A "qtest/qtest.native";
+                A "--preamble"; A "open Batteries;;";
+                A "--output"; P (env "%_test.ml");
+                A "extract";
+                P (env "%.ml")])
+        end;
+
+      rule "all tests"
+        ~prod:"src/all_tests.ml"
+        ~deps:("qtest/qtest.native" :: src_bat_ml)
+        begin fun env build ->
+          Cmd(S([A "qtest/qtest.native";
+                 A "--preamble"; A "open Batteries;;";
+                 A "--output"; P (env "src/all_tests.ml");
+                 A "extract"] @
+                 List.map (fun file -> P file) src_bat_ml
+          ))
+        end;
+
       rule "code coverage"
         ~prod:"coverage/index.html"
+        ~stamp:"coverage.stamp"
         ~deps:src_bat_ml
         begin fun env build ->
+
           List.iter (fun filename ->
-            tag_file filename ["with_pa_bisect"; "syntax_camlp4o"; "use_bisect"];
+            tag_file filename [
+              "with_pa_bisect";
+              "syntax_camlp4o";
+              "use_bisect"
+            ]
           ) src_bat_ml;
+
           let test_exes = [
             "testsuite/main.native";
-            "qtest/all_tests.native";
+            "src/all_tests.native";
           ] in
           List.iter (fun exe -> tag_file exe ["use_bisect"]) test_exes;
           List.iter Outcome.ignore_good (build (
             List.map (fun exe -> [exe]) test_exes
           ));
+
           Seq ([
             Cmd(S[Sh"rm -f bisect*.out"]);
           ] @

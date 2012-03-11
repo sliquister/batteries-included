@@ -1,3 +1,7 @@
+# tagging the generated files of inline tests
+<*_test{s,}.*>: pkg_oUnit
+<all_tests.*>: threads
+
 true: debug
 <{batMutex,batRMutex}.{ml,mli}>: threads
 <batteriesThread.*>: threads
